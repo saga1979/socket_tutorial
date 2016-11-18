@@ -62,7 +62,8 @@ int main(int argc , char *argv[])
             perror("could not create thread");
             return 1;
         }
-         
+    	pthread_detach(sniffer_thread);     
+	
         //Now join the thread , so that we dont terminate before the thread
         //pthread_join( sniffer_thread , NULL);
         puts("Handler assigned");
