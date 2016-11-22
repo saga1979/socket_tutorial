@@ -9,15 +9,21 @@
 #include <stdlib.h>
 #include <time.h>
 #include <poll.h>
+#include <sys/epoll.h>
+#include <errno.h>
 
 #define MAX_CLINETS 1000
-
+//select
 static int clientfds[MAX_CLINETS] = {0};
-static struct pollfd	pollfds[MAX_CLINETS] ={0};
-static int  pollfds_count = 1;
-
 static fd_set readfds;
 static fd_set writefds;
+//poll
+static struct pollfd	pollfds[MAX_CLINETS] ={0};
+static int  pollfds_count = 1;
+//epoll
+static int epfd = -1;
+static struct epoll_event epollevs[MAX_CLINETS] = {0};
+
 
 static int sockfd = -1;
 static char buffer[256] = {0};
@@ -199,9 +205,84 @@ void poll_eventloop()
 	
 }
 
+void epoll_request_process(int ready)
+{
+	for(int i=0; i< ready; i++)
+	{
+		if(epollevs[i].events & EPOLLIN)
+		{
+			if(epollevs[i].data.fd == sockfd)
+			{
+				 struct sockaddr_in cli_addr;
+				 int clilen = sizeof(cli_addr);
+			     int newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+			     if (newsockfd < 0) 
+			          error("ERROR on accept");
+			     struct epoll_event ev;
+			     ev.events = EPOLLIN;
+			     ev.data.fd = newsockfd;
+				if(epoll_ctl(epfd, EPOLL_CTL_ADD, newsockfd, &ev) == -1)
+				{
+					perror("epoll_ctl:");
+				}
+			}
+			else
+			{
+				bzero(buffer,256);			
+			    int n = read(epollevs[i].data.fd,buffer,255);
+			    if (n < 0) 
+			    {
+					perror("ERROR reading from socket");
+					
+					epoll_ctl(epfd, EPOLL_CTL_DEL, epollevs[i].data.fd, 0);
+					
+					close(epollevs[i].data.fd);
+					
+					continue;
+				}
+				time_t cur = time(0);
+				struct tm * ptm = localtime(&cur);
+				printf("%s:", asctime(ptm));
+				
+			    printf("msg: %s\n",buffer);	
+			    //读操作完成后，马上给客户端回应
+
+				n = write(epollevs[i].data.fd,"I got your message",18);
+				if (n < 0) error("ERROR writing to socket");
+				
+			}
+		}
+	}
+	
+}
 void epoll_eventloop()
 {
 	printf("--------staring server with epoll mode------------\n");
+	epfd = epoll_create1(0);
+	if(epfd == -1)
+	{
+		error("epoll_create1:");
+	}
+	
+	epollevs[0].events = EPOLLIN;
+	epollevs[0].data.fd = sockfd;
+	if(epoll_ctl(epfd, EPOLL_CTL_ADD, sockfd, &epollevs[0]) == -1)
+	{
+		error("epoll_ctl:");
+	}
+	
+	while(1)
+	{
+		int ret = epoll_wait(epfd, epollevs,MAX_CLINETS, DELAY_MS);
+		if(ret == -1)
+		{
+			if(errno == EINTR)
+				continue;
+			error("epoll_wait:");
+		}
+		epoll_request_process(ret);
+	}
+	
 }
 
 
