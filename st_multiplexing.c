@@ -303,7 +303,7 @@ int main(int argc, char *argv[])
 
     int server_type = 0;
     if (argc == 3) server_type = atoi(argv[2]);
-    switch (atoi(argv[2]))
+    switch (server_type)
     {
     case 0:
         select_eventloop();
